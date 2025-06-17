@@ -111,7 +111,103 @@ export interface ArtifactClient {
  */
 export class DefaultArtifactClient implements ArtifactClient {
   async uploadArtifact(
+import { warning } from '@actions/core'
+import { isGhes } from './shared/config'
+import {
+  UploadArtifactOptions,
+  UploadArtifactResponse,
+  DownloadArtifactOptions,
+  GetArtifactResponse,
+  ListArtifactsOptions,
+  ListArtifactsResponse,
+  DownloadArtifactResponse,
+  FindOptions,
+  DeleteArtifactResponse
+} from './shared/interfaces'
+import { uploadArtifact } from './upload/upload-artifact'
+import {
+  downloadArtifactPublic,
+  downloadArtifactInternal
+} from './download/download-artifact'
+import {
+  deleteArtifactPublic,
+  deleteArtifactInternal
+} from './delete/delete-artifact'
+import { getArtifactPublic, getArtifactInternal } from './find/get-artifact'
+import { listArtifactsPublic, listArtifactsInternal } from './find/list-artifacts'
+import { GHESNotSupportedError } from './shared/errors'
+
+function logArtifactWarning(action: string, error: unknown) {
+  warning(
+    `${action} failed with error: ${
+      error instanceof Error ? error.message : String(error)
+    }.
+
+Errors can be temporary, so please try again and optionally run the action with debug mode enabled for more information.
+
+If the error persists, please check whether Actions and API requests are operating normally at [https://githubstatus.com](https://www.githubstatus.com).`
+  )
+}
+
+function ensureNotGhes(method: string) {
+  if (isGhes()) {
+    throw new GHESNotSupportedError(`${method} is not supported on GHES.`)
+  }
+}
+
+export class DefaultArtifactClient implements ArtifactClient {
+  async uploadArtifact(
     name: string,
+    files: string[],
+    rootDirectory: string,
+    options?: UploadArtifactOptions
+  ): Promise<UploadArtifactResponse> {
+    try {
+      ensureNotGhes('Upload Artifact')
+      return uploadArtifact(name, files, rootDirectory, options)
+    } catch (error: unknown) {
+      logArtifactWarning('Artifact upload', error)
+      throw error
+    }
+  }
+
+  async downloadArtifact(
+    artifactId: number,
+    options?: DownloadArtifactOptions & FindOptions
+  ): Promise<DownloadArtifactResponse> {
+    try {
+      ensureNotGhes('Download Artifact')
+      if (options?.findBy) {
+        const {
+          findBy: { repositoryOwner, repositoryName, token },
+          ...downloadOptions
+        } = options
+        return downloadArtifactPublic(
+          artifactId,
+          repositoryOwner,
+          repositoryName,
+          token,
+          downloadOptions
+        )
+      }
+      return downloadArtifactInternal(artifactId, options)
+    } catch (error: unknown) {
+      logArtifactWarning('Download Artifact', error)
+      throw error
+    }
+  }
+
+  async listArtifacts(
+    options?: ListArtifactsOptions & FindOptions
+  ): Promise<ListArtifactsResponse> {
+    try {
+      ensureNotGhes('List Artifacts')
+      if (options?.findBy) {
+        const {
+          findBy: { workflowRunId, repositoryOwner, repositoryName, token }
+        } = options
+       
+    name: string,
     files: string[],
     rootDirectory: string,
     options?: UploadArtifactOptions
